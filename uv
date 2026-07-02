@@ -1,0 +1,52 @@
+"""
+파일명: main.py
+
+주요 기능:
+- 로컬 테스트 실행 진입점
+- 테스트용 요청 데이터를 순서대로 Agent에 전달
+- Agent 처리 결과를 콘솔에 출력
+
+구체적인 설명:
+- 현재 프로젝트는 FastAPI 없이 로컬에서만 실행한다.
+- 실제 API 요청 대신 TEST_REQUESTS 배열에 샘플 데이터를 넣어 테스트한다.
+- process_request()를 호출해 전체 사이클을 한 바퀴 실행한다.
+- 현재 저장 방식은 PrintSink를 사용하므로 DB에 저장하지 않고 print만 한다.
+"""
+
+from manual_agent.processor import process_request
+from manual_agent.sink import PrintSink, pretty_print
+
+
+TEST_REQUESTS = [
+    {
+        "companyId": "019f1b62-dd8f-77f9-8500-22881b24065f",
+        "user_prompt": "에어컨 모델 EAMB-0852QDWMD를 위한 메뉴얼을 새로 작성하고 싶어.",
+    },
+    {
+        "companyId": "019f1b62-dd8f-77f9-8500-22881b24065f",
+        "user_prompt": "에어컨 모델 EAMB-0852QDWMD를 위한 메뉴얼을 새로 작성하고 싶어. 기존에 등록된 에어컨 OAMB-0852NDWMD과 유사한 메뉴얼을 작성하려해. 뭐부터 시작해야하지?",
+    },
+    {
+        "companyId": "019f1b62-dd8f-77f9-8500-22881b24065f",
+        "user_prompt": "40대 여성 주부 고객이 우리 에어컨 EAMB-0852QDWMD의 리모컨 버튼중 송풍 버튼이 뭘하는건지 모르겠대, 메뉴얼에 송풍 관련 설명이 없나 확인하고 없는 경우 메뉴얼을 보완할 방법을 알려줘",
+    },
+]
+
+
+def main() -> None:
+    sink = PrintSink()
+
+    for index, request in enumerate(TEST_REQUESTS, start=1):
+        print("\n" + "=" * 80)
+        print(f"[TEST CASE {index}]")
+        print("=" * 80)
+
+        pretty_print("INPUT", request)
+
+        result = process_request(request, sink)
+
+        pretty_print("RESULT", result)
+
+
+if __name__ == "__main__":
+    main()
