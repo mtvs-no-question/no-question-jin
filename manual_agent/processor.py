@@ -15,8 +15,8 @@
 from typing import Any
 from uuid import uuid4
 
-from manual_agent.ai_structurer import structure_request_with_ai
-from manual_agent.payload_builder import (
+from manual_agent.llm.ai_structurer import structure_request_with_ai
+from manual_agent.storage.payload_builder import (
     build_db_payload,
     build_graph_payload,
     build_vector_payload,

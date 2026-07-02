@@ -20,8 +20,8 @@ import json
 from typing import Any
 
 from manual_agent.config import OPENAI_MODEL, create_openai_client
-from manual_agent.prompts import CLARIFICATION_AGENT_PROMPT, SYSTEM_PROMPT
-from manual_agent.schema import (
+from manual_agent.llm.prompts import CLARIFICATION_AGENT_PROMPT, SYSTEM_PROMPT
+from manual_agent.llm.schema import (
     CLARIFICATION_OUTPUT_SCHEMA,
     STRUCTURED_OUTPUT_SCHEMA,
 )
