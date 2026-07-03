@@ -28,13 +28,15 @@
 from typing import Any
 from uuid import uuid4
 
+from langgraph.types import interrupt
+
 from manual_agent.llm.ai_structurer import (
     run_clarification_agent,
     structure_request_with_ai,
 )
-from manual_agent.services.approval import ask_approval
 from manual_agent.services.quality_checker import check_manual_section
 from manual_agent.services.retrieval_service import search_existing_manual
+from manual_agent.services.manual_source import load_manual_context
 from manual_agent.storage.payload_builder import (
     build_db_payload,
     build_graph_payload,
@@ -77,29 +79,115 @@ def clarification_node(state: ManualAgentState) -> dict[str, Any]:
         "gathered_summary": gathered_summary,
     }
 
+def manual_source_choice_node(state: ManualAgentState) -> dict[str, Any]:
+    """
+    역할:
+        Markdown 초안을 만들기 전에 제품 매뉴얼 원문을 사용할지 사용자에게 확인한다.
+
+    연결되는 파일:
+        - manual_agent/workflow/graph.py
+            clarification 이후 이 node로 진입한다.
+        - manual_agent/services/manual_source.py
+            파일을 사용할 경우 manual_context_load_node에서 실제 파일을 읽는다.
+
+    interrupt 사용 이유:
+        input()을 직접 쓰지 않고 LangGraph 실행을 멈춘 뒤,
+        Studio / API / CLI에서 resume 입력으로 다시 진행하기 위해 사용한다.
+    """
+
+    answer = interrupt(
+        {
+            "type": "manual_source_choice",
+            "message": (
+                "제품 매뉴얼 원문을 참고해서 작성할까요?\n\n"
+                "- PDF / MD / TXT 파일 경로를 입력하면 해당 파일을 참고합니다.\n"
+                "- 매뉴얼 없이 기존 방식으로 진행하려면 skip을 입력하세요."
+            ),
+            "examples": [
+                r"C:\Users\Admin\Desktop\EUSI-2941_manual.pdf",
+                "skip",
+            ],
+        }
+    )
+
+    user_input = str(answer).strip().strip('"')
+
+    if user_input.lower() in ["skip", "s", "no", "아니", "없음"]:
+        return {
+            "manual_source_mode": "skip",
+            "manual_file_path": None,
+            "manual_context": None,
+            "manual_context_available": False,
+        }
+
+    return {
+        "manual_source_mode": "file",
+        "manual_file_path": user_input,
+    }
+
+def manual_context_load_node(state: ManualAgentState) -> dict[str, Any]:
+    """
+    역할:
+        사용자가 입력한 제품 매뉴얼 파일 경로를 읽어서 manual_context를 만든다.
+
+    연결되는 파일:
+        - manual_agent/services/manual_source.py
+            load_manual_context()를 호출한다.
+        - manual_agent/workflow/graph.py
+            manual_context_available 값에 따라 task_and_draft로 갈지 종료할지 결정한다.
+        - task_and_draft_node
+            manual_context를 LLM 요청에 포함한다.
+
+    실패 처리:
+        파일 경로가 잘못되었거나 읽기 실패하면 is_ready=False로 두고
+        사용자에게 다시 입력을 요청한다.
+    """
+
+    try:
+        manual_context = load_manual_context(state["manual_file_path"])
+
+        return {
+            "manual_context": manual_context,
+            "manual_context_available": True,
+        }
+
+    except Exception as error:
+        return {
+            "is_ready": False,
+            "manual_context": None,
+            "manual_context_available": False,
+            "assistant_message": (
+                "매뉴얼 파일을 읽지 못했습니다.\n"
+                f"원인: {error}\n\n"
+                "파일 경로를 다시 확인하거나, skip을 입력해 매뉴얼 없이 진행할 수 있습니다."
+            ),
+            "error": str(error),
+        }
 
 def task_and_draft_node(state: ManualAgentState) -> dict[str, Any]:
     """
     역할:
-        gathered_summary를 기반으로 Markdown Section Agent를 실행한다.
+        gathered_summary를 기반으로 구조화 결과와 Markdown 초안을 생성한다.
 
     연결되는 파일:
         - manual_agent/llm/ai_structurer.py
             structure_request_with_ai()를 호출한다.
         - manual_agent/processor.py
-            validate_structured_result()를 재사용한다.
+            validate_structured_result()를 호출해 필수값 누락 여부를 확인한다.
         - manual_agent/workflow/graph.py
-            이 node 실행 후 기존 매뉴얼 검색 또는 품질 검수로 분기한다.
+            draft_result가 None이면 다음 단계로 진행하지 않는다.
 
-    주의:
-        validate_structured_result()는 에러를 발생시키지 않고
-        missing_fields list를 반환한다.
-        따라서 반환값을 반드시 직접 확인해야 한다.
+    핵심:
+        product.model_name 같은 필수값이 없으면 draft_result를 None으로 두고,
+        assistant_message를 통해 사용자에게 추가 정보를 요청한다.
     """
 
     request = {
         "companyId": state["company_id"],
         "user_prompt": state["gathered_summary"],
+        "manual_source_mode": state.get("manual_source_mode"),
+        "manual_context_available": state.get("manual_context_available", False),
+        "manual_context": state.get("manual_context"),
     }
 
     structured_result = structure_request_with_ai(request)
@@ -107,6 +195,8 @@ def task_and_draft_node(state: ManualAgentState) -> dict[str, Any]:
     missing_fields = validate_structured_result(structured_result)
 
     if missing_fields:
+        structured_result["missing_fields"] = missing_fields
+
         return {
             "is_ready": False,
             "assistant_message": _build_missing_fields_message(missing_fields),
@@ -146,22 +236,49 @@ def quality_check_node(state: ManualAgentState) -> dict[str, Any]:
 
 
 def approval_node(state: ManualAgentState) -> dict[str, Any]:
-    result = ask_approval(state["draft_result"])
+    """
+    역할:
+        생성된 매뉴얼 초안을 사용자에게 보여주고 승인 또는 수정 요청을 받는다.
 
-    status = result["approval_status"]
-    feedback = result.get("approval_feedback")
+    연결되는 파일:
+        - manual_agent/workflow/graph.py
+            approval_status가 approved면 payload_build로 이동한다.
+        - main.py
+            interrupt 발생 시 Command(resume=...)로 사용자 응답을 다시 넣는다.
 
-    if status == "approved":
-        assistant_message = "승인되었습니다. 저장용 payload를 생성합니다."
-    else:
-        assistant_message = (
-            "초안을 수정하겠습니다. 추가하거나 바꾸고 싶은 내용을 입력해 주세요."
-        )
+    interrupt 사용 이유:
+        기존 input() 방식은 LangSmith Studio / API 실행에서 멈춤 문제가 생긴다.
+        interrupt는 LangGraph 표준 방식으로 실행을 중단하고 재개할 수 있다.
+    """
+
+    markdown = state["draft_result"]["manual_section"]["markdown"]
+
+    answer = interrupt(
+        {
+            "type": "approval",
+            "message": "아래 매뉴얼 초안을 승인하시겠습니까?",
+            "markdown": markdown,
+            "options": [
+                "승인",
+                "approve",
+                "수정할 내용을 직접 입력",
+            ],
+        }
+    )
+
+    user_input = str(answer).strip()
+
+    if user_input.lower() in ["approve", "approved", "y", "yes", "승인"]:
+        return {
+            "approval_status": "approved",
+            "approval_feedback": None,
+            "assistant_message": "승인되었습니다. 저장용 payload를 생성합니다.",
+        }
 
     return {
-        "approval_status": status,
-        "approval_feedback": feedback,
-        "assistant_message": assistant_message,
+        "approval_status": "revision_requested",
+        "approval_feedback": user_input,
+        "assistant_message": "초안을 수정하겠습니다. 추가하거나 바꾸고 싶은 내용을 입력해 주세요.",
     }
 
 

@@ -18,6 +18,7 @@
 from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.checkpoint.memory import InMemorySaver
 
 from manual_agent.workflow.nodes import (
     approval_node,
@@ -27,15 +28,17 @@ from manual_agent.workflow.nodes import (
     quality_check_node,
     sink_node,
     task_and_draft_node,
+    manual_source_choice_node,
+    manual_context_load_node,
 )
 from manual_agent.workflow.state import ManualAgentState
 
 
 def route_after_clarification(
     state: ManualAgentState,
-) -> Literal["task_and_draft", "end"]:
+) -> Literal["manual_source_choice", "end"]:
     if state.get("is_ready"):
-        return "task_and_draft"
+        return "manual_source_choice"
 
     return "end"
 
@@ -43,13 +46,35 @@ def route_after_clarification(
 def route_after_task_and_draft(
     state: ManualAgentState,
 ) -> Literal["existing_manual_search", "quality_check", "end"]:
+    """
+    역할:
+        task_and_draft_node 실행 후 다음 node를 결정한다.
+
+    연결되는 파일:
+        - manual_agent/workflow/nodes.py
+            task_and_draft_node가 만든 structured_task, draft_result를 확인한다.
+        - manual_agent/workflow/graph.py
+            missing_fields 또는 draft_result 누락 시 다음 단계로 보내지 않는다.
+
+    핵심:
+        draft_result가 None이면 절대 quality_check로 보내면 안 된다.
+    """
+
     structured = state.get("structured_task")
+    draft = state.get("draft_result")
 
     if not structured:
         return "end"
 
+    if draft is None:
+        return "end"
+
     missing_fields = structured.get("missing_fields") or []
     if missing_fields:
+        return "end"
+
+    product = structured.get("product") or {}
+    if not product.get("model_name"):
         return "end"
 
     needs_search = structured["manual_task"]["needs_existing_manual_search"]
@@ -79,11 +104,29 @@ def route_after_approval(
 
     return "end"
 
+def route_after_manual_source_choice(
+    state: ManualAgentState,
+) -> Literal["manual_context_load", "task_and_draft"]:
+    if state.get("manual_source_mode") == "file":
+        return "manual_context_load"
 
-def build_manual_agent_graph():
+    return "task_and_draft"
+
+
+def route_after_manual_context_load(
+    state: ManualAgentState,
+) -> Literal["task_and_draft", "end"]:
+    if state.get("manual_context_available"):
+        return "task_and_draft"
+
+    return "end"
+
+def build_manual_agent_graph(use_memory_checkpointer: bool = True):
     graph = StateGraph(ManualAgentState)
 
     graph.add_node("clarification", clarification_node)
+    graph.add_node("manual_source_choice", manual_source_choice_node)
+    graph.add_node("manual_context_load", manual_context_load_node)
     graph.add_node("task_and_draft", task_and_draft_node)
     graph.add_node("existing_manual_search", existing_manual_search_node)
     graph.add_node("quality_check", quality_check_node)
@@ -96,6 +139,24 @@ def build_manual_agent_graph():
     graph.add_conditional_edges(
         "clarification",
         route_after_clarification,
+        {
+            "manual_source_choice": "manual_source_choice",
+            "end": END,
+        },
+    )
+
+    graph.add_conditional_edges(
+        "manual_source_choice",
+        route_after_manual_source_choice,
+        {
+            "manual_context_load": "manual_context_load",
+            "task_and_draft": "task_and_draft",
+        },
+    )
+
+    graph.add_conditional_edges(
+        "manual_context_load",
+        route_after_manual_context_load,
         {
             "task_and_draft": "task_and_draft",
             "end": END,
@@ -134,5 +195,8 @@ def build_manual_agent_graph():
 
     graph.add_edge("payload_build", "sink")
     graph.add_edge("sink", END)
+
+    if use_memory_checkpointer:
+        return graph.compile(checkpointer=InMemorySaver())
 
     return graph.compile()

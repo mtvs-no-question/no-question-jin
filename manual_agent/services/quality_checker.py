@@ -25,9 +25,28 @@ from typing import Any
 
 
 def check_manual_section(
-    structured_result: dict[str, Any],
+    structured_result: dict[str, Any] | None,
     existing_manual_context: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    """
+    역할:
+        Markdown Section Agent가 생성한 매뉴얼 초안을 검수한다.
+
+    연결되는 파일:
+        - manual_agent/workflow/nodes.py
+            quality_check_node에서 호출한다.
+
+    핵심:
+        structured_result가 None이면 에러를 내지 않고 검수 실패로 반환한다.
+    """
+
+    if structured_result is None:
+        return {
+            "passed": False,
+            "missing": ["draft_result"],
+            "reason": "생성된 초안이 없어 품질 검수를 진행할 수 없습니다.",
+        }
+
     missing = []
 
     product = structured_result.get("product", {})
