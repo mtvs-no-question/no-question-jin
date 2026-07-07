@@ -1,1 +1,43 @@
+# secrets
 .env
+.env.*
+!.env.example
+
+# python env
+.venv/
+venv/
+env/
+
+# python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# langgraph / runtime
+.langgraph_api/
+runtime_uploads/
+debug_last_llm_response.txt
+
+# node / frontend
+web_frontend/node_modules/
+web_frontend/.env
+web_frontend/.env.*
+web_frontend/dist/
+web_frontend/build/
+web_frontend/.next/
+web_frontend/.vite/
+
+# logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# uv / package cache
+.uv/

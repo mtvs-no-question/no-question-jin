@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>No Question Jin · Manual Agent</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">
+          <div class="brand-mark">NQ</div>
+          <div>
+            <strong>No Question Jin</strong>
+            <span>Manual Agent</span>
+          </div>
+        </div>
+
+        <button class="new-chat" id="newChatButton" type="button">
+          <span>＋</span>
+          새 작업 시작
+        </button>
+
+        <div class="side-section">
+          <div class="side-title">최근 작업</div>
+          <div class="thread-list" id="threadList"></div>
+        </div>
+
+        <div class="side-footer">
+          <div class="status-pill">
+            <span class="live-dot"></span>
+            Local Web
+          </div>
+          <button class="ghost-button" id="themeButton" type="button">테마 전환</button>
+        </div>
+      </aside>
+
+      <main class="chat-layout">
+        <header class="topbar">
+          <button class="icon-button mobile-only" id="sidebarToggle" type="button" aria-label="사이드바 열기">☰</button>
+          <div>
+            <div class="page-title">매뉴얼 보완 에이전트</div>
+            <div class="page-subtitle">Clarification · Manual Draft · Approval · Payload</div>
+          </div>
+          <div class="topbar-actions">
+            <button class="ghost-button" id="copyButton" type="button">Markdown 복사</button>
+            <button class="ghost-button" id="downloadButton" type="button">다운로드</button>
+          </div>
+        </header>
+
+        <section class="hero" id="hero">
+          <div class="hero-card">
+            <div class="hero-badge">Local MVP</div>
+            <h1>제품 매뉴얼 보완 요청을 입력하세요.</h1>
+            <p>모델명, 고객 혼동 지점, 추가할 설명 주제를 적으면 에이전트가 질문하고 초안을 생성합니다.</p>
+            <div class="prompt-chips">
+              <button class="chip" data-prompt="에어컨 KAJF28419 송풍버튼 위치가 정면에서 측면으로 변경되어 고객이 버튼을 잘 찾지 못하는 문제를 매뉴얼에 보완해줘.">송풍 버튼 위치 변경</button>
+              <button class="chip" data-prompt="창문형 에어컨 배기구가 창문에 막히는 설치 문제가 있어 과열 예방 안내를 추가해줘.">과열 예방 안내</button>
+              <button class="chip" data-prompt="공기청정기 필터 청소 주기와 교체 알림을 고객이 혼동해서 설명서를 보완하고 싶어.">필터 관리 안내</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="messages" id="messages" aria-live="polite"></section>
+
+        <section class="composer-wrap">
+          <div class="composer-card">
+            <input id="fileInput" type="file" accept=".pdf,.md,.txt" hidden />
+            <button class="icon-button" id="attachButton" type="button" title="매뉴얼 파일 업로드">📎</button>
+            <textarea id="messageInput" rows="1" placeholder="요청을 입력하세요. 예: KAJF28419 송풍버튼 위치 변경 안내 추가"></textarea>
+            <button class="send-button" id="sendButton" type="button">전송</button>
+          </div>
+          <div class="composer-hint" id="composerHint">Shift+Enter 줄바꿈 · Enter 전송 · PDF/MD/TXT 업로드 지원</div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
